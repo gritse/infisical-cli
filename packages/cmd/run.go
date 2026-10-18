@@ -469,11 +469,15 @@ func formatSecretsForShell(secrets []models.SingleEnvironmentVariable) models.In
 	secretsByKey := getSecretsByKeys(secrets)
 	environmentVariables := make(map[string]string)
 
-	// add all existing environment vars
+	// add all existing environment vars, except the credential this CLI authenticated with: the child
+	// gets the secrets it was launched for, not the means to fetch any others
 	for _, s := range os.Environ() {
 		kv := strings.SplitN(s, "=", 2)
 		key := kv[0]
 		value := kv[1]
+		if util.IsInfisicalAuthEnvKey(key) {
+			continue
+		}
 		environmentVariables[key] = value
 	}
 
