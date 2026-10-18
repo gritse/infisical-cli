@@ -318,7 +318,8 @@
     "port": "|int|0",
     "proxy": "|bool|false",
     "reason": "|string|",
-    "target": "|string|"
+    "target": "|string|",
+    "token": "|string|"
   },
   "infisical pam agentic": {},
   "infisical pam agentic access": {
