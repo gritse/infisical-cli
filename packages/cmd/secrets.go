@@ -317,7 +317,11 @@ func runSecretsWrite(cmd *cobra.Command, args []string, mode util.SecretWriteMod
 			exitWithError(cmd, errProjectNotLinked())
 		}
 		if projectId == "" {
-			util.PrintErrorMessageAndExit("When using service tokens or machine identities, you must set the --projectId flag")
+			projectId = util.GetWorkspaceIdFromConfig("")
+		}
+
+		if projectId == "" {
+			util.PrintErrorMessageAndExit("When using service tokens or machine identities, pass --projectId, set INFISICAL_PROJECT_ID, or run inside a project with .infisical.yaml")
 		}
 
 		secretOperations, err = util.WriteRawSecrets(mode, writeArgs, secretType, environmentName, secretsPath, projectId, token, tags)
