@@ -49,6 +49,27 @@ func GetWorkSpaceFromFile() (models.WorkspaceConfigFile, error) {
 	return GetWorkSpaceFromFilePath(filepath.Dir(cfgFile))
 }
 
+// GetWorkspaceIdFromConfig returns the project id from the project config file in configFileDir, or
+// from the usual lookup when configFileDir is empty. It returns "" when no config file is found, so
+// callers can fall back to it without making the file mandatory.
+func GetWorkspaceIdFromConfig(configFileDir string) string {
+	var workspaceFile models.WorkspaceConfigFile
+	var err error
+
+	if configFileDir == "" {
+		workspaceFile, err = GetWorkSpaceFromFile()
+	} else {
+		workspaceFile, err = GetWorkSpaceFromFilePath(configFileDir)
+	}
+
+	if err != nil {
+		log.Debug().Msgf("GetWorkspaceIdFromConfig: [err=%s]", err)
+		return ""
+	}
+
+	return workspaceFile.WorkspaceId
+}
+
 func GetDomainFromFile() (domain string, valid bool) {
 	workspaceFile, err := GetWorkSpaceFromFile()
 	if err != nil {
