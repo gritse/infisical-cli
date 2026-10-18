@@ -182,26 +182,7 @@ func (s *runSession) writeContextFile(document string) (string, error) {
 // This list is hygiene, not a boundary. A child running as the same user can still read the parent's
 // argv, so it is the sandbox below, not this list, that contains a deliberately hostile agent.
 // containerRuntimeEnvKeys is a different matter: those hold part of the boundary open.
-var infisicalAuthEnvKeys = []string{
-	util.INFISICAL_TOKEN_NAME,
-	util.INFISICAL_UNIVERSAL_AUTH_ACCESS_TOKEN_NAME,
-	util.INFISICAL_GATEWAY_TOKEN_NAME_LEGACY, // bare "TOKEN", still read by util.GetInfisicalToken
-	util.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID_NAME,
-	util.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET_NAME,
-	util.INFISICAL_JWT_NAME,
-	util.INFISICAL_OIDC_AUTH_JWT_NAME,
-	util.INFISICAL_LDAP_USERNAME,
-	util.INFISICAL_LDAP_PASSWORD,
-	util.INFISICAL_KUBERNETES_SERVICE_ACCOUNT_TOKEN_NAME,
-	util.INFISICAL_GCP_IAM_SERVICE_ACCOUNT_KEY_FILE_PATH_NAME,
-	util.INFISICAL_AUTH_METHOD_NAME,
-	util.INFISICAL_MACHINE_IDENTITY_ID_NAME,
-	util.INFISICAL_ORGANIZATION_ID,
-	util.INFISICAL_VAULT_FILE_PASSPHRASE_ENV_NAME, // unlocks the file-backed keyring
-	util.INFISICAL_BOOTSTRAP_EMAIL_NAME,
-	util.INFISICAL_BOOTSTRAP_PASSWORD_NAME,
-	util.INFISICAL_BOOTSTRAP_ORGANIZATION_NAME,
-}
+var infisicalAuthEnvKeys = util.InfisicalAuthEnvKeys
 
 // containerRuntimeEnvKeys each name a container daemon endpoint for a client to use. They are
 // withheld for the same reason pamDenySockets exists, and are the other half of it.
