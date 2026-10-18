@@ -218,7 +218,11 @@ func runSecretsSet(cmd *cobra.Command, args []string) {
 	var secretOperations []models.SecretSetOperation
 	if token != nil && (token.Type == util.SERVICE_TOKEN_IDENTIFIER || token.Type == util.UNIVERSAL_AUTH_TOKEN_IDENTIFIER) {
 		if projectId == "" {
-			util.PrintErrorMessageAndExit("When using service tokens or machine identities, you must set the --projectId flag")
+			projectId = util.GetWorkspaceIdFromConfig("")
+		}
+
+		if projectId == "" {
+			util.PrintErrorMessageAndExit("When using service tokens or machine identities, pass --projectId, set INFISICAL_PROJECT_ID, or run inside a project with .infisical.yaml")
 		}
 
 		secretOperations, err = util.SetRawSecrets(args, secretType, environmentName, secretsPath, projectId, token, file, tags)
