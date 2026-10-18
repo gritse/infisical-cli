@@ -86,19 +86,7 @@ or credential helper, which --proxy does not change.`,
 			util.PrintErrorMessageAndExit("--proxy starts a local proxy for your own client, so it cannot also run a command on the target. Drop one of the two.")
 		}
 
-		util.RequireLogin()
-
-		loggedInUserDetails, err := util.GetCurrentLoggedInUserDetails(true)
-		if err != nil {
-			util.HandleError(err, "Unable to get logged in user details")
-		}
-
-		isConnected := util.ValidateInfisicalAPIConnection()
-		if isConnected && loggedInUserDetails.LoginExpired {
-			loggedInUserDetails = util.EstablishUserLoginSession()
-		}
-
-		pam.StartPAMAccess(loggedInUserDetails.UserCredentials.JTWToken, pam.AccessOptions{
+		pam.StartPAMAccess(resolveAccessToken(cmd), pam.AccessOptions{
 			Path:       path,
 			Reason:     reason,
 			Duration:   durationStr,
@@ -263,20 +251,8 @@ func splitAccountFlags(values []string) []string {
 // keeps that one fresh in the background, so the run reads the current value instead of the one it
 // started with. A supplied token and a stored login are both fixed for the run.
 func resolveAgentAccessToken(cmd *cobra.Command) (accessToken func() string, stop func()) {
-	token, err := util.GetInfisicalToken(cmd)
-	if err != nil {
-		util.HandleError(err, "Unable to parse token")
-	}
-
-	if token != nil {
-		if token.Type == util.SERVICE_TOKEN_IDENTIFIER {
-			util.PrintErrorMessageAndExit("PAM does not support service tokens. Use a machine identity access token, or log in as a user.")
-		}
-		// Neither of the fixed-token paths can be renewed, so an already-expired one is worth catching
-		// now: the alternative is a run that binds every proxy, prints its banner, launches the agent,
-		// and only fails once the agent tries its first connection.
-		failIfTokenExpired(token.Token, "the provided token")
-		return func() string { return token.Token }, func() {}
+	if token, ok := suppliedAccessToken(cmd); ok {
+		return func() string { return token }, func() {}
 	}
 
 	// No ready-made token, so a machine identity may still authenticate itself with its own
@@ -285,6 +261,47 @@ func resolveAgentAccessToken(cmd *cobra.Command) (accessToken func() string, sto
 		return source, stopAuth
 	}
 
+	jwt := loggedInUserAccessToken()
+	return func() string { return jwt }, func() {}
+}
+
+// resolveAccessToken returns the token for an interactive `pam access` session: a machine identity
+// access token when one is supplied through --token or the environment, otherwise the stored user
+// login. The session is started once with this value, so unlike the agentic path no renewal is needed.
+func resolveAccessToken(cmd *cobra.Command) string {
+	if token, ok := suppliedAccessToken(cmd); ok {
+		return token
+	}
+
+	return loggedInUserAccessToken()
+}
+
+// suppliedAccessToken returns a ready-made machine identity access token from --token or the
+// environment, and false when none was given.
+func suppliedAccessToken(cmd *cobra.Command) (string, bool) {
+	token, err := util.GetInfisicalToken(cmd)
+	if err != nil {
+		util.HandleError(err, "Unable to parse token")
+	}
+
+	if token == nil {
+		return "", false
+	}
+
+	if token.Type == util.SERVICE_TOKEN_IDENTIFIER {
+		util.PrintErrorMessageAndExit("PAM does not support service tokens. Use a machine identity access token, or log in as a user.")
+	}
+
+	// A supplied token can't be renewed, so an already-expired one is worth catching now: the
+	// alternative is a run that binds every proxy, prints its banner, and only fails once the first
+	// connection is attempted.
+	failIfTokenExpired(token.Token, "the provided token")
+	return token.Token, true
+}
+
+// loggedInUserAccessToken returns the stored user login's token, refreshing an expired session when
+// the API is reachable.
+func loggedInUserAccessToken() string {
 	util.RequireLogin()
 
 	loggedInUserDetails, err := util.GetCurrentLoggedInUserDetails(true)
@@ -299,7 +316,7 @@ func resolveAgentAccessToken(cmd *cobra.Command) (accessToken func() string, sto
 	// Reached with an expired login when the API was unreachable, so the refresh above was skipped.
 	jwt := loggedInUserDetails.UserCredentials.JTWToken
 	failIfTokenExpired(jwt, "your login")
-	return func() string { return jwt }, func() {}
+	return jwt
 }
 
 // agenticAuthMethods lists what --auth-method accepts, for the flag help and for the error when it
@@ -385,6 +402,7 @@ func init() {
 	pamAccessCmd.Flags().Int("port", 0, "Port for the local proxy server (0 for auto-assign)")
 	pamAccessCmd.Flags().String("target", "", "Target host to connect to (for accounts that allow multiple hosts, e.g. Windows AD)")
 	pamAccessCmd.Flags().Bool("proxy", false, "Start a local proxy to point your own client at, instead of connecting you to the target. Only SSH accounts connect directly today")
+	pamAccessCmd.Flags().String("token", "", "Access as a machine identity using its access token")
 
 	pamAgenticAccessCmd.Flags().StringArray("account", nil, "Account to expose, as folder/account. Repeatable. Defaults to every account you can launch")
 	pamAgenticAccessCmd.Flags().String("duration", "1h", "How long each PAM session may last (e.g. '1h', '30m', '2h30m')")
