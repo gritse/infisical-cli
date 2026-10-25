@@ -67,12 +67,15 @@ jobs:
         with:
           path: ci
 
+      # The rebase brings in upstream's .github/workflows changes, which GITHUB_TOKEN may not push;
+      # a write deploy key (secret RELEASE_SSH_KEY) is not subject to that restriction.
       - uses: actions/checkout@v4
         if: steps.pick.outputs.skip == 'false'
         with:
           ref: ${{ env.FIX_BRANCH }}
           fetch-depth: 0
           path: src
+          ssh-key: ${{ secrets.RELEASE_SSH_KEY }}
 
       - name: Rebase the fix branch onto the upstream tag
         if: steps.pick.outputs.skip == 'false'
@@ -139,11 +142,14 @@ jobs:
           VERSION: ${{ steps.pick.outputs.version }}
           TAG: ${{ steps.pick.outputs.upstream_tag }}
           BEFORE: ${{ steps.rebase.outputs.before }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -eu
           git push --force-with-lease="refs/heads/$FIX_BRANCH:$BEFORE" origin "HEAD:refs/heads/$FIX_BRANCH"
           git tag -a "v$VERSION" -m "$VERSION: fix branch rebased onto upstream $TAG"
-          git push origin "refs/tags/v$VERSION"
+          # The tag goes over the built-in token on purpose: pushes made with it start no other
+          # workflows, so upstream's release workflow in this fork stays quiet.
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/v$VERSION"
 
       - uses: docker/setup-qemu-action@v3
         if: steps.pick.outputs.skip == 'false'
@@ -191,11 +197,11 @@ jobs:
         run: |
           title="Automatic release on top of ${TAG:-the latest upstream release} failed"
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          existing=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "Failed again: $run_url"
+            gh issue comment "$existing" -R "$GITHUB_REPOSITORY" --body "Failed again: $run_url"
           else
-            gh issue create --title "$title" --body "The Release workflow could not rebase, test or publish the fix branch. Run: $run_url
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "The Release workflow could not rebase, test or publish the fix branch. Run: $run_url
 
           Rebase by hand: \`git rebase $TAG\` on \`$FIX_BRANCH\`, push, then dispatch the Release workflow with force enabled."
           fi
