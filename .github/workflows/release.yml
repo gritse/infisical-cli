@@ -187,7 +187,20 @@ jobs:
 
           Fix commits:
           $(git log --format='- %s' "$TAG..HEAD")"
-          gh release create "v$VERSION" "dist/infisical-$VERSION-darwin-arm64" --title "$VERSION" --notes "$notes"
+          # -R is required: the checkout also has an "upstream" remote, which gh would prefer.
+          gh release create "v$VERSION" "dist/infisical-$VERSION-darwin-arm64" -R "$GITHUB_REPOSITORY" --title "$VERSION" --notes "$notes"
+
+      - name: Close an earlier failure issue
+        if: steps.pick.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pick.outputs.upstream_tag }}
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: |
+          title="Automatic release on top of $TAG failed"
+          for n in $(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[].number'); do
+            gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "Released as v$VERSION: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/v$VERSION"
+          done
 
       - name: Report a failure as an issue
         if: failure()
