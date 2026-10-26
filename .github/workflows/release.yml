@@ -29,7 +29,7 @@ concurrency:
 
 env:
   UPSTREAM: Infisical/cli
-  FIX_BRANCH: pam-machine-identity
+  FIX_BRANCH: gritse-forked
   SUFFIX: gritse
 
 jobs:

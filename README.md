@@ -2,9 +2,9 @@ Fork of [Infisical/cli](https://github.com/Infisical/cli) with a few fixes for m
 of PAM, kept as a branch to be offered upstream.
 
 - `main` mirrors upstream.
-- `pam-machine-identity` is upstream's latest release tag plus the fix commits, nothing else.
+- `gritse-forked` is upstream's latest release tag plus the fix commits, nothing else.
 - `fork` (this branch, the default) only holds the release plumbing: `.github/workflows/release.yml`
-  rebases `pam-machine-identity` onto each new upstream release, tests it, publishes
+  rebases `gritse-forked` onto each new upstream release, tests it, publishes
   `ghcr.io/gritse/infisical-cli:<upstream version>-gritse.N` (linux amd64 + arm64, also used as
   the PAM gateway image) and attaches a macOS arm64 binary to a GitHub release.
 
