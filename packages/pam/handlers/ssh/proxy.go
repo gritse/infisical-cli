@@ -284,13 +284,16 @@ func (p *SSHProxy) handleChannel(ctx context.Context, newChannel ssh.NewChannel,
 	// Separate done channels to ensure exit-status is forwarded before channel teardown.
 	serverReqDone := make(chan struct{})
 	clientReqDone := make(chan struct{})
+	// Held while a client request is forwarded and its reply relayed, so teardown cannot close the
+	// client's channel between the target answering exec and the client hearing that answer.
+	clientReqForwarding := make(chan struct{}, 1)
 	go func() {
 		defer close(clientReqDone)
-		p.handleChannelRequests(clientRequests, serverChannel, sessionID, channelType, chState)
+		p.handleChannelRequests(clientRequests, serverChannel, sessionID, channelType, chState, clientReqForwarding)
 	}()
 	go func() {
 		defer close(serverReqDone)
-		p.handleChannelRequests(serverRequests, clientChannel, sessionID, channelType, chState)
+		p.handleChannelRequests(serverRequests, clientChannel, sessionID, channelType, chState, nil)
 	}()
 
 	clientToServerDone := make(chan error, 1)
@@ -347,8 +350,19 @@ func (p *SSHProxy) handleChannel(ctx context.Context, newChannel ssh.NewChannel,
 	case <-serverReqDone:
 	case <-time.After(3 * time.Second):
 	}
+	// A command that exits at once can close the target's channel before the exec reply reaches
+	// the client, which then gives up without reading the output or the exit status.
+	forwardingHeld := false
+	select {
+	case clientReqForwarding <- struct{}{}:
+		forwardingHeld = true
+	case <-time.After(3 * time.Second):
+	}
 	clientChannel.Close()
 	serverChannel.Close()
+	if forwardingHeld {
+		<-clientReqForwarding
+	}
 	<-clientReqDone
 
 	log.Debug().
@@ -357,8 +371,9 @@ func (p *SSHProxy) handleChannel(ctx context.Context, newChannel ssh.NewChannel,
 		Msg("SSH channel closed")
 }
 
-// handleChannelRequests handles channel-specific requests (pty, shell, exec, etc.)
-func (p *SSHProxy) handleChannelRequests(requests <-chan *ssh.Request, targetChannel ssh.Channel, sessionID string, channelType string, chState *channelState) {
+// handleChannelRequests handles channel-specific requests (pty, shell, exec, etc.). When forwarding
+// is set, it holds that token from forwarding each request until its reply is relayed.
+func (p *SSHProxy) handleChannelRequests(requests <-chan *ssh.Request, targetChannel ssh.Channel, sessionID string, channelType string, chState *channelState, forwarding chan struct{}) {
 	for req := range requests {
 		log.Debug().
 			Str("sessionID", sessionID).
@@ -490,31 +505,41 @@ func (p *SSHProxy) handleChannelRequests(requests <-chan *ssh.Request, targetCha
 				Msg("PTY requested")
 		}
 
-		// Forward request to target channel
-		ok, err := targetChannel.SendRequest(req.Type, req.WantReply, req.Payload)
-		if err != nil {
-			// EOF errors on exit-status/exit-signal are expected when channel closes
-			// before the status can be forwarded - this is normal, not an error
-			if err == io.EOF && (req.Type == "exit-status" || req.Type == "exit-signal") {
-				log.Debug().
-					Str("sessionID", sessionID).
-					Str("requestType", req.Type).
-					Msg("Channel closed before forwarding exit status (normal)")
-			} else {
-				log.Error().Err(err).
-					Str("sessionID", sessionID).
-					Str("requestType", req.Type).
-					Msg("Failed to forward channel request")
-			}
-			if req.WantReply {
-				req.Reply(false, nil)
-			}
-			continue
+		if forwarding != nil {
+			forwarding <- struct{}{}
 		}
+		forwardChannelRequest(req, targetChannel, sessionID)
+		if forwarding != nil {
+			<-forwarding
+		}
+	}
+}
 
-		if req.WantReply {
-			req.Reply(ok, nil)
+// forwardChannelRequest sends req to the target channel and relays the target's reply.
+func forwardChannelRequest(req *ssh.Request, targetChannel ssh.Channel, sessionID string) {
+	ok, err := targetChannel.SendRequest(req.Type, req.WantReply, req.Payload)
+	if err != nil {
+		// EOF errors on exit-status/exit-signal are expected when channel closes
+		// before the status can be forwarded - this is normal, not an error
+		if err == io.EOF && (req.Type == "exit-status" || req.Type == "exit-signal") {
+			log.Debug().
+				Str("sessionID", sessionID).
+				Str("requestType", req.Type).
+				Msg("Channel closed before forwarding exit status (normal)")
+		} else {
+			log.Error().Err(err).
+				Str("sessionID", sessionID).
+				Str("requestType", req.Type).
+				Msg("Failed to forward channel request")
 		}
+		if req.WantReply {
+			req.Reply(false, nil)
+		}
+		return
+	}
+
+	if req.WantReply {
+		req.Reply(ok, nil)
 	}
 }
 
